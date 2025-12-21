@@ -18,6 +18,74 @@ interface SubscriptionModalProps {
 const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, user, onSubscribe }) => {
     if (!isOpen) return null;
 
+    // Local State for Confirmation Step
+    const [confirmingPlan, setConfirmingPlan] = React.useState<string | null>(null);
+    const [processing, setProcessing] = React.useState(false);
+
+    const handleClick = (plan: string) => {
+        setConfirmingPlan(plan);
+    };
+
+    const handleConfirm = async () => {
+        if (!confirmingPlan) return;
+        setProcessing(true);
+        try {
+            await onSubscribe(confirmingPlan);
+            onClose();
+        } catch (e) {
+            console.error(e);
+            alert("Transaction Failed");
+        } finally {
+            setProcessing(false);
+            setConfirmingPlan(null);
+        }
+    };
+
+    const handleCancel = () => {
+        setConfirmingPlan(null);
+    };
+
+    if (confirmingPlan) {
+        const isUpgrade = user?.subscription !== 'free';
+        const price = confirmingPlan === 'infantry' ? '$4.99' : '$9.99';
+        const coins = confirmingPlan === 'infantry' ? '500' : '2000';
+
+        return (
+            <div className="fixed inset-0 z-[160] bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="w-full max-w-lg bg-[#0a0a0a] border border-red-500 shadow-[0_0_50px_rgba(220,38,38,0.4)] rounded-lg p-8 text-center animate-in zoom-in duration-300">
+                    <h2 className="text-2xl font-oswald text-white uppercase tracking-widest mb-4">
+                        Confirm Requisition
+                    </h2>
+                    <div className="text-zinc-400 font-mono text-sm mb-8 space-y-4">
+                        {isUpgrade ? (
+                            <p>Proceeding will update your clearance to <span className="text-red-500 font-bold uppercase">{confirmingPlan}</span> and add the <span className="text-amber-500 font-bold">{coins} KC</span> credit pack to your existing balance.</p>
+                        ) : (
+                            <p>Do you want to buy the <span className="text-red-500 font-bold uppercase">{confirmingPlan}</span> clearance for <span className="text-white font-bold">{price}</span>?</p>
+                        )}
+                        <p className="text-xs text-zinc-600">Secure transmission line active. 10% Affiliate commission will be processed.</p>
+                    </div>
+
+                    <div className="flex gap-4 justify-center">
+                        <button
+                            onClick={handleCancel}
+                            disabled={processing}
+                            className="px-6 py-2 border border-zinc-700 hover:bg-zinc-800 text-zinc-400 font-bold uppercase text-sm tracking-wider rounded-sm transition-colors"
+                        >
+                            Cancel Operation
+                        </button>
+                        <button
+                            onClick={handleConfirm}
+                            disabled={processing}
+                            className="px-6 py-2 bg-red-700 hover:bg-red-600 text-white font-bold uppercase text-sm tracking-wider rounded-sm transition-colors border border-red-500 flex items-center gap-2"
+                        >
+                            {processing ? 'Processing...' : 'Proceed'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
             <div className="w-full max-w-6xl bg-[#0a0a0a] border border-red-900/50 shadow-[0_0_50px_rgba(220,38,38,0.2)] rounded-lg relative overflow-hidden flex flex-col max-h-[90vh]">
@@ -76,7 +144,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                     </div>
 
                     {/* Infantry Tier */}
-                    <div className="border border-red-900/50 bg-red-950/10 p-6 rounded-lg flex flex-col items-center text-center relative group hover:bg-red-950/20 transition-all cursor-pointer" onClick={() => onSubscribe('infantry')}>
+                    <div className="border border-red-900/50 bg-red-950/10 p-6 rounded-lg flex flex-col items-center text-center relative group hover:bg-red-950/20 transition-all cursor-pointer" onClick={() => handleClick('infantry')}>
                         <div className="absolute top-0 right-0 bg-red-900 text-white text-[10px] px-2 py-0.5 uppercase font-bold">Popular</div>
                         <div className="text-red-500 font-bold uppercase mb-2 group-hover:text-red-400">Infantry</div>
                         <div className="text-3xl font-oswald text-white mb-4">$4.99<span className="text-sm text-zinc-500">/mo</span></div>
@@ -95,7 +163,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                     </div>
 
                     {/* Commander Tier */}
-                    <div className="border border-amber-600/30 bg-amber-950/10 p-6 rounded-lg flex flex-col items-center text-center group hover:bg-amber-950/20 transition-all cursor-pointer" onClick={() => onSubscribe('commander')}>
+                    <div className="border border-amber-600/30 bg-amber-950/10 p-6 rounded-lg flex flex-col items-center text-center group hover:bg-amber-950/20 transition-all cursor-pointer" onClick={() => handleClick('commander')}>
                         <div className="text-amber-500 font-bold uppercase mb-2 group-hover:text-amber-400">Commander</div>
                         <div className="text-3xl font-oswald text-white mb-4">$9.99<span className="text-sm text-zinc-500">/mo</span></div>
                         <ul className="text-sm text-zinc-300 space-y-2 mb-6 font-mono text-left w-full pl-4">

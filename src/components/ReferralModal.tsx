@@ -59,7 +59,7 @@ const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, user }) 
 
                     <div className="text-xs text-zinc-400 leading-relaxed text-center border-t border-zinc-800 pt-4">
                         <p>Recruit new agents to the cause.</p>
-                        <p className="mt-2 text-emerald-500/80">Earn <span className="font-bold text-emerald-400">20% commission</span> on every subscription paid by operatives you recruit.</p>
+                        <p className="mt-2 text-emerald-500/80">Earn <span className="font-bold text-emerald-400">10% commission</span> on every subscription paid by operatives you recruit.</p>
                     </div>
                 </div>
             </div>

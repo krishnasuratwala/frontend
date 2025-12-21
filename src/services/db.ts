@@ -13,6 +13,8 @@ export interface User {
   subscription: 'free' | 'infantry' | 'commander';
   role?: 'user' | 'admin';
   affiliate_balance: number;
+  referrals_count: number;
+  paid_referrals_count: number;
 }
 
 export interface StoredSession {
@@ -149,6 +151,15 @@ export const db = {
     return res.json();
   },
 
+  async deleteAdminUser(userId: string) {
+    const token = localStorage.getItem('dictator_token');
+    const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return res.json();
+  },
+
   async getAdminUserChats(userId: string) {
     const token = localStorage.getItem('dictator_token');
     const res = await fetch(`${API_BASE}/api/admin/users/${userId}/chats`, {
@@ -171,5 +182,24 @@ export const db = {
     if (!response.ok) {
       throw new Error('Failed to submit feedback');
     }
+  },
+
+  // --- SUBSCRIPTIONS ---
+  async buySubscription(plan: 'infantry' | 'commander') {
+    const token = localStorage.getItem('dictator_token');
+    const response = await fetch(`${API_BASE}/api/subscribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ plan })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Subscription Failed');
+    }
+    return response.json();
   }
 };

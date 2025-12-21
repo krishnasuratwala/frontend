@@ -32,6 +32,8 @@ const ConfirmationModal = React.lazy(() => import('./components/ConfirmationModa
 const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
 const SubscriptionModal = React.lazy(() => import('./components/SubscriptionModal'));
 const ReferralModal = React.lazy(() => import('./components/ReferralModal'));
+const StatusModal = React.lazy(() => import('./components/StatusModal'));
+const LoadingScreen = React.lazy(() => import('./components/LoadingScreen'));
 
 import { chatWithDictator, ChatMessage } from './services/gemini';
 import { db, User, StoredSession } from './services/db';
@@ -172,6 +174,7 @@ const getLeaderAvatarUrl = (leader: Leader, style: string) => {
 const App: React.FC = () => {
   // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true); // NEW: Global Loading State
 
   // App State
   // API Config
@@ -198,6 +201,14 @@ const App: React.FC = () => {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   const [pendingPlan, setPendingPlan] = useState<string | null>(null);
+
+  // Status Modal State
+  const [statusModal, setStatusModal] = useState<{ open: boolean; title: string; message: string; type: 'success' | 'error' }>({
+    open: false,
+    title: '',
+    message: '',
+    type: 'success'
+  });
 
   // Feedback State
   const [activeFeedbackMsgId, setActiveFeedbackMsgId] = useState<string | null>(null); // Msg ID where text box is open
@@ -289,23 +300,71 @@ const App: React.FC = () => {
 
   // Initial Load - Check for Session & Referrals
   useEffect(() => {
-    // Check for referral code in URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const refCode = urlParams.get('ref');
-    if (refCode) {
-      localStorage.setItem('dictator_ref', refCode);
-      // Optional: Clean URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
+    const initApp = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const refCode = urlParams.get('ref');
+      if (refCode) {
+        localStorage.setItem('dictator_ref', refCode);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
 
-    const restoreSession = async () => {
-      const user = await db.getCurrentUser();
-      if (user) {
-        setCurrentUser(user);
+      const token = localStorage.getItem('dictator_token');
+      if (!token) {
+        setIsInitializing(false);
+        return;
+      }
+
+      try {
+        const user = await db.getCurrentUser();
+        if (user) {
+          setCurrentUser(user);
+          try {
+            const userSessions = await db.getSessions(user.id);
+            userSessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            setSessions(userSessions);
+            if (userSessions.length > 0) {
+              setCurrentSessionId(userSessions[0].id);
+              if (userSessions[0].style) {
+                const style = userSessions[0].style === 'Radio Broadcast' ? 'Press Conference' : userSessions[0].style;
+                setSelectedStyle(style);
+              }
+            }
+          } catch (err) { console.error("Session pre-fetch error", err); }
+        }
+      } catch (e) {
+        console.error("Init error", e);
+      } finally {
+        setTimeout(() => setIsInitializing(false), 2000);
       }
     };
-    restoreSession();
+    initApp();
   }, []);
+
+  // REAL-TIME POLLING: Keep User Data (Coins/Balance) Fresh
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const freshUser = await db.getCurrentUser();
+        if (freshUser) {
+          // Only update if critical data changed to avoid unnecessary re-renders (though React handles shallow eq well, object ref changes)
+          setCurrentUser(prev => {
+            if (!prev) return freshUser;
+            if (prev.coins !== freshUser.coins || prev.affiliate_balance !== freshUser.affiliate_balance || prev.subscription !== freshUser.subscription) {
+              return freshUser; // Actual update
+            }
+            return prev; // No change
+          });
+        }
+      } catch (e) {
+        console.error("Polling failed", e);
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(intervalId);
+  }, [currentUser?.id]); // Only reset identifier if ID changes
+
 
   // Load History when User Changes
   useEffect(() => {
@@ -398,14 +457,7 @@ const App: React.FC = () => {
 
   const handleSubscribe = async (plan: string) => {
     if (!currentUser) return;
-
-    // Check if user already has a paid subscription
-    if (currentUser.subscription !== 'free') {
-      setPendingPlan(plan);
-      return;
-    }
-
-    // Call execution directly if free user
+    // Direct execution - Confirmation is now handled inside SubscriptionModal
     executeSubscription(plan);
   };
 
@@ -423,12 +475,44 @@ const App: React.FC = () => {
         body: JSON.stringify({ userId: currentUser.id, plan })
       });
       const data = await response.json();
-      if (data.status === 'success') {
-        setCurrentUser({ ...currentUser, coins: data.coins, subscription: data.subscription });
+
+      // FIX: Check for 'ok' and use correct keys from server
+      if (data.status === 'ok') {
+        const newCoins = data.new_total_coins;
+        const newSub = data.new_tier;
+
+        // Immediate UI Update
+        setCurrentUser(prev => {
+          if (!prev) return null;
+          return { ...prev, coins: newCoins, subscription: newSub };
+        });
+
         setShowSubscriptionModal(false);
+        // Custom Success Modal
+        setStatusModal({
+          open: true,
+          title: 'Requisition Approved',
+          message: `Successfully enlisted as ${newSub.toUpperCase()}! ${data.coins_added} KC added to reserves.`,
+          type: 'success'
+        });
+      } else {
+        console.error("Subscription failed:", data.error);
+        // Custom Error Modal
+        setStatusModal({
+          open: true,
+          title: 'Transaction Denied',
+          message: data.error || "Unknown Error",
+          type: 'error'
+        });
       }
     } catch (e) {
       console.error("Subscription failed", e);
+      setStatusModal({
+        open: true,
+        title: 'Network Failure',
+        message: "Secure channel interrupted. Please try again.",
+        type: 'error'
+      });
     }
   };
 
@@ -641,10 +725,45 @@ const App: React.FC = () => {
     setActiveFeedbackMsgId(null);
   };
 
+  // ... inside App component ...
+  const handleLoginSuccess = async (user: User) => {
+    // Show loading screen immediately
+    setIsInitializing(true);
+    setCurrentUser(user);
+
+    // Pre-fetch sessions before revealing UI
+    try {
+      const userSessions = await db.getSessions(user.id);
+      userSessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setSessions(userSessions);
+
+      if (userSessions.length > 0) {
+        setCurrentSessionId(userSessions[0].id);
+        // Restore style
+        if (userSessions[0].style) {
+          const style = userSessions[0].style === 'Radio Broadcast' ? 'Press Conference' : userSessions[0].style;
+          setSelectedStyle(style);
+        }
+      } else {
+        createNewSession(user.id);
+      }
+    } catch (err) {
+      console.error("Post-login fetch failed", err);
+    } finally {
+      setTimeout(() => {
+        setIsInitializing(false);
+      }, 1500); // Brief cinematic load
+    }
+  };
+
   // --- RENDER ---
 
+  if (isInitializing) {
+    return <React.Suspense fallback={null}><LoadingScreen /></React.Suspense>;
+  }
+
   if (!currentUser) {
-    return <Auth onLogin={setCurrentUser} />;
+    return <Auth onLogin={handleLoginSuccess} />;
   }
 
   // --- ADMIN REDIRECT ---
@@ -750,6 +869,15 @@ const App: React.FC = () => {
       </div>
 
       <React.Suspense fallback={null}>
+        {/* Status Modal */}
+        <StatusModal
+          isOpen={statusModal.open}
+          onClose={() => setStatusModal({ ...statusModal, open: false })}
+          title={statusModal.title}
+          message={statusModal.message}
+          type={statusModal.type}
+        />
+
         {/* Subscription Modal */}
         {showSubscriptionModal && (
           <SubscriptionModal
@@ -769,25 +897,14 @@ const App: React.FC = () => {
           />
         )}
 
-        {/* Confirmation Modal */}
-        <ConfirmationModal
-          isOpen={!!pendingPlan}
-          onClose={() => setPendingPlan(null)}
-          onConfirm={() => {
-            if (pendingPlan) executeSubscription(pendingPlan);
-            setPendingPlan(null);
-          }}
-          title="Override Authorization"
-          message={
-            <span>
-              You are currently enlisted as <strong className="text-white">{currentUser?.subscription.toUpperCase()}</strong>.
-              <br /><br />
-              Proceeding will update your clearance to <strong className="text-amber-500">{pendingPlan?.toUpperCase()}</strong> and add the new credit pack to your existing balance.
-              <br /><br />
-              Do you verify this transaction?
-            </span>
-          }
-        />
+        {/* Referral Modal */}
+        {showReferralModal && (
+          <ReferralModal
+            isOpen={showReferralModal}
+            onClose={() => setShowReferralModal(false)}
+            user={currentUser}
+          />
+        )}
       </React.Suspense>
 
       {/* --- TOGGLE SIDEBAR BUTTON --- */}
