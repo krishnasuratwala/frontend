@@ -217,6 +217,28 @@ const App: React.FC = () => {
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Track previous role to detect changes
+  const prevRoleRef = useRef(selectedRole);
+
+  useEffect(() => {
+    if (prevRoleRef.current !== selectedRole && currentSessionId) {
+      // Persona Changed! Insert notification.
+      setSessions(curr => curr.map(s => {
+        if (s.id === currentSessionId) {
+          const notificationMsg: ChatMessage = {
+            id: crypto.randomUUID(),
+            role: 'system', // Use system role for special rendering
+            parts: [{ text: "Context history deleted due to persona switch." }],
+            feedback: undefined
+          };
+          return { ...s, messages: [...s.messages, notificationMsg] };
+        }
+        return s;
+      }));
+    }
+    prevRoleRef.current = selectedRole;
+  }, [selectedRole, currentSessionId]);
+
   // Derived State
   // Derived State moved to useMemo below
   // const currentSession = sessions.find(s => s.id === currentSessionId);
@@ -465,52 +487,31 @@ const App: React.FC = () => {
     if (!currentUser) return;
 
     try {
-      const token = localStorage.getItem('dictator_token');
-      const response = await fetch(`${API_BASE}/api/subscribe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ userId: currentUser.id, plan })
-      });
-      const data = await response.json();
+      // Crypto Payment Flow
+      const data = await db.createPayment(plan as 'infantry' | 'commander');
 
-      // FIX: Check for 'ok' and use correct keys from server
-      if (data.status === 'ok') {
-        const newCoins = data.new_total_coins;
-        const newSub = data.new_tier;
-
-        // Immediate UI Update
-        setCurrentUser(prev => {
-          if (!prev) return null;
-          return { ...prev, coins: newCoins, subscription: newSub };
-        });
-
-        setShowSubscriptionModal(false);
-        // Custom Success Modal
+      if (data.checkoutLink) {
+        // Show redirect message
         setStatusModal({
           open: true,
-          title: 'Requisition Approved',
-          message: `Successfully enlisted as ${newSub.toUpperCase()}! ${data.coins_added} KC added to reserves.`,
+          title: 'Establishing Secure Link',
+          message: "Redirecting to encrypted payment gateway...",
           type: 'success'
         });
+
+        setTimeout(() => {
+          window.location.href = data.checkoutLink;
+        }, 1500);
       } else {
-        console.error("Subscription failed:", data.error);
-        // Custom Error Modal
-        setStatusModal({
-          open: true,
-          title: 'Transaction Denied',
-          message: data.error || "Unknown Error",
-          type: 'error'
-        });
+        throw new Error("Invalid Gateway Response");
       }
-    } catch (e) {
-      console.error("Subscription failed", e);
+
+    } catch (e: any) {
+      console.error("Payment failed", e);
       setStatusModal({
         open: true,
         title: 'Network Failure',
-        message: "Secure channel interrupted. Please try again.",
+        message: e.message || "Secure channel interrupted. Please try again.",
         type: 'error'
       });
     }
@@ -564,10 +565,12 @@ const App: React.FC = () => {
     setIsTyping(true);
 
     try {
-      const historyForApi = updatedMessages.map(m => ({
-        role: m.role as 'user' | 'model',
-        parts: [{ text: m.parts[0].text }]
-      }));
+      const historyForApi = updatedMessages
+        .filter(m => m.role !== 'system') // Exclude system notifications
+        .map(m => ({
+          role: m.role as 'user' | 'model',
+          parts: [{ text: m.parts[0].text }]
+        }));
 
       // Placeholder ID for the streaming message
       const aiMsgId = crypto.randomUUID();
@@ -592,6 +595,7 @@ const App: React.FC = () => {
         selectedStyle,
         selectedRole,
         userMsgText,
+        activeSessionId || "", // Pass Session ID
         (partialText, partialAudioUrl) => {
           // REAL-TIME UPDATE CALLBACK
           setSessions(currentSessions => currentSessions.map(session => {
@@ -1157,9 +1161,24 @@ const App: React.FC = () => {
                     </div>
                   ) : (
                     currentMessages.map((msg, idx) => {
+                      // SYSTEM / NOTIFICATION MESSAGE
+                      if (msg.role === 'system') {
+                        return (
+                          <div key={msg.id || idx} className="flex justify-center items-center my-6 opacity-60">
+                            <div className="flex items-center gap-2 px-3 py-1 bg-zinc-900/50 border border-zinc-700/50 rounded-full">
+                              <ExclamationTriangleIcon className="w-3 h-3 text-amber-500" />
+                              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-mono">
+                                {msg.parts[0].text}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       const isAi = msg.role === 'model';
+                      const isUser = msg.role === 'user'; // Added for clarity, though isAi covers the other case for now
                       return (
-                        <div key={idx} className={`flex w-full ${isAi ? 'justify-start' : 'justify-end'} group`}>
+                        <div key={msg.id || idx} className={`flex w-full ${isAi ? 'justify-start' : 'justify-end'} group`}>
                           <div className={`
                                             max-w-[90%] md:max-w-[75%] flex flex-col
                                             ${isAi ? 'items-start' : 'items-end'}

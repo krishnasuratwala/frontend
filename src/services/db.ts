@@ -185,7 +185,26 @@ export const db = {
   },
 
   // --- SUBSCRIPTIONS ---
+  async createPayment(plan: 'infantry' | 'commander') {
+    const token = localStorage.getItem('dictator_token');
+    const response = await fetch(`${API_BASE}/api/create-payment`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ plan })
+    });
+    
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Payment Init Failed');
+    }
+    return response.json();
+  },
+
   async buySubscription(plan: 'infantry' | 'commander') {
+    // Legacy / Mock method - keeping for reference or fallback if needed
     const token = localStorage.getItem('dictator_token');
     const response = await fetch(`${API_BASE}/api/subscribe`, {
       method: 'POST',

@@ -5,7 +5,7 @@
 
 export interface ChatMessage {
   id?: string;
-  role: 'user' | 'model';
+  role: 'user' | 'model' | 'system';
   parts: { text: string }[];
   userRole?: string;
   feedback?: 'like' | 'dislike';
@@ -43,20 +43,23 @@ export async function chatWithDictator(
   style: string,
   userRole: string,
   newMessage: string,
+  sessionId: string,
   onUpdate?: (text: string, audioUrl?: string) => void
 ): Promise<ChatResponse> {
 
   // Select specific prompt or fallback to generic construction
   const corePersona = SYSTEM_PROMPTS[style] || `[SYSTEM START]\nIDENTITY: ${leaderName}\nSETTING: ${style}\nUSER_ROLE: ${userRole}\nINSTRUCTION: Respond historically and immersively. Keep it under 100 words.\n[SYSTEM END]`;
 
-  const fullPrompt = `${corePersona}\n\nUser (${userRole}): ${newMessage}`;
-
+  // We now send structured messages so Middleware can inject history
   const payload = {
     messages: [
-      { role: "user", content: fullPrompt }
+      { role: "system", content: corePersona },
+      { role: "user", content: `User (${userRole}): ${newMessage}` }
     ],
-    userId: localStorage.getItem("dictator_user_id"), // Pass userId for coins
-    style: style // Pass persona style for audio selection
+    userId: localStorage.getItem("dictator_user_id"),
+    sessionId: sessionId,
+    userRole: userRole, // NEW: For Context Switching Logic
+    style: style
   };
 
   try {
@@ -86,23 +89,32 @@ export async function chatWithDictator(
     }
 
     // --- STREAMING READER ---
+    // --- STREAMING READER ---
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
     let accumulatedText = "";
     let finalAudioUrl = undefined;
     let finalCoins = undefined;
+    let buffer = "";
 
     if (reader) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        const lines = buffer.split('\n');
+        // Keep the last line in the buffer as it might be incomplete
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const jsonStr = line.slice(6);
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
+
+          if (trimmedLine.startsWith('data: ')) {
+            const jsonStr = trimmedLine.slice(6);
             if (jsonStr === '[DONE]') break;
 
             try {
@@ -123,7 +135,7 @@ export async function chatWithDictator(
               if (data.coins !== undefined) finalCoins = data.coins;
 
             } catch (e) {
-              // Ignore parse errors for partial lines
+              console.warn("Failed to parse JSON chunk", jsonStr);
             }
           }
         }
