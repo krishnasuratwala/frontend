@@ -38,6 +38,7 @@ const LoadingScreen = React.lazy(() => import('./components/LoadingScreen'));
 import { chatWithDictator, ChatMessage } from './services/gemini';
 import { db, User, StoredSession } from './services/db';
 import { Auth } from './components/Auth';
+import { VoicePlayer } from './components/VoicePlayer';
 // Assets (Cloudinary)
 const kcCoin = "https://res.cloudinary.com/dxhvpogob/image/upload/v1766312810/kc_coin_tqiimi.webp";
 const albertSpeerImg = "https://res.cloudinary.com/dxhvpogob/image/upload/v1766312808/albert_speer_khv7hc.webp";
@@ -1223,10 +1224,7 @@ const App: React.FC = () => {
 
                               {/* AUDIO PLAYER (Infantry/Commander) */}
                               {isAi && msg.audioUrl && (
-                                <div className="mt-4 pt-2 border-t border-black/10">
-                                  <audio controls src={msg.audioUrl} className="w-full h-8 opacity-80 hover:opacity-100 transition-opacity" />
-                                  <p className="text-[9px] text-zinc-500 uppercase mt-1 tracking-widest text-center">Cloned Voice Log</p>
-                                </div>
+                                <VoicePlayer src={msg.audioUrl} />
                               )}
 
                               {/* FEEDBACK UI (Only for Model) */}
