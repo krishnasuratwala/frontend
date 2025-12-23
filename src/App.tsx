@@ -179,7 +179,7 @@ const App: React.FC = () => {
 
   // App State
   // API Config
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const API_BASE = import.meta.env.VITE_API_URL || "https://dictator-ai-middleware-2.onrender.com";
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [sessions, setSessions] = useState<StoredSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);

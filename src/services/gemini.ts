@@ -73,7 +73,7 @@ export async function chatWithDictator(
 
   try {
     // Configuration: Use Env Logic for Production Separation
-    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    const baseUrl = import.meta.env.VITE_API_URL || "https://dictator-ai-middleware-2.onrender.com";
     const url = `${baseUrl}/chat`;
 
     console.log(`Transmission initiated to: ${url}`);
